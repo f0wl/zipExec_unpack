@@ -118,6 +118,7 @@ func main() {
 	jsFile, readErr := ioutil.ReadFile(os.Args[1])
 	check(readErr)
 
+	// offset: start of payload
 	off1Bytes, byteErr := hex.DecodeString("203D20275545") //  = 'UE
 	check(byteErr)
 	offP1, scanErr := scanFile(jsFile, off1Bytes)
@@ -125,11 +126,18 @@ func main() {
 	// correct offset for pattern bytes
 	offP1 = offP1 + 4
 
+	if offP1 == -1 {
+		fmt.Printf("\n✗ Unable to find payload offset.\n\n")
+		os.Exit(1)
+	}
+
+	// offset: end of payload
 	off2Bytes, byteErr := hex.DecodeString("270A202020200A2020200A09") // '.    .   ..
 	check(byteErr)
 	offP2, scanErr := scanFile(jsFile, off2Bytes)
 	check(scanErr)
 
+	// offset: password string
 	off3Bytes, byteErr := hex.DecodeString("202F706173733A") // /pass:
 	check(byteErr)
 	offPw1, scanErr := scanFile(jsFile, off3Bytes)
@@ -137,15 +145,16 @@ func main() {
 	// correct offset for pattern bytes
 	offPw1 = offPw1 + 7
 
+	if offP1 == -1 {
+		fmt.Printf("\n✗ Unable to find password offset.\n\n")
+		os.Exit(1)
+	}
+
+	// offset: end of password string
 	off4Bytes, byteErr := hex.DecodeString("202F757365723A22") // /user:"
 	check(byteErr)
 	offPw2, scanErr := scanFile(jsFile, off4Bytes)
 	check(scanErr)
-
-	if offP1 == -1 {
-		fmt.Printf("\n✗ Unable to find payload offset.\n\n")
-		os.Exit(1)
-	}
 
 	// extract the payload from the js file
 	payload := jsFile[offP1:offP2]
@@ -163,26 +172,34 @@ func main() {
 
 	color.Green("✓ Extracted password: %v\n", string(password))
 
+	// open the zip file
 	r, zipErr := zip.OpenReader(filename)
 	check(zipErr)
 	defer r.Close()
 
 	for _, f := range r.File {
+
+		// set the extracted password
 		if f.IsEncrypted() {
 			f.SetPassword(string(password))
 		}
 
+		// open the file in the zip...
 		r, openErr := f.Open()
 		check(openErr)
 
+		// ...and read the contents
 		buf, readErr := ioutil.ReadAll(r)
 		check(readErr)
 		defer r.Close()
 
 		color.Green("✓ Decompressed payload → %v: %v bytes\n\n", f.Name, len(buf))
+
+		// write the extracted file to disk
 		writeErr = ioutil.WriteFile(f.Name, buf, 0644)
 		check(writeErr)
 
+		// print meta data of the extracted payload
 		fmt.Fprintln(w1, "→ Payload MD5: \t", calcMD5(f.Name))
 		fmt.Fprintln(w1, "→ Payload SHA-256: \t", calcSHA256(f.Name))
 		fmt.Fprintln(w1, "→ Payload MIME type: \t", getMimeType(f.Name))
